@@ -1,310 +1,246 @@
 import React, { useState } from 'react';
-import { TODAY, getKW } from '../utils';
+import { TODAY, catStyle } from '../utils';
 
-const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
-const DAY_NAMES   = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const FREQ_LABELS = {
+  daily:     'Täglich',
+  weekdays:  'Werktags',
+  weekly:    'Wöchentlich',
+  weekonce:  'Einmal pro Woche',
+  monthly:   'Monatlich',
+};
+const WEEKDAY_NAMES = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
 
-const EV_COLORS = ['#6366F1', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#10B981', '#F97316'];
-
-function localDs(y, m, d) {
-  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+// Returns true if this recurring task is due today
+export function isDueToday(r) {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun ... 6=Sat
+  if (!r.active) return false;
+  if (r.frequency === 'daily')    return true;
+  if (r.frequency === 'weekdays') return day >= 1 && day <= 5;
+  if (r.frequency === 'weekly')   return r.dayOfWeek === day;
+  if (r.frequency === 'monthly')  return r.dayOfMonth === d.getDate();
+  // weekonce: show every day — visibility handled by completedThisWeek
+  if (r.frequency === 'weekonce') return true;
+  return false;
 }
-function getDays(y, m)   { return new Date(y, m + 1, 0).getDate(); }
-function getFirstDow(y, m) { const d = new Date(y, m, 1).getDay(); return d === 0 ? 6 : d - 1; }
 
-function fmtDate(ds) {
-  if (!ds) return '';
-  const [y, m, d] = ds.split('-');
-  return new Date(+y, +m - 1, +d).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+// Returns badge label for frequency
+function freqBadge(r) {
+  if (r.frequency === 'weekonce') return 'Einmal/Woche';
+  if (r.frequency === 'weekly') return `${WEEKDAY_NAMES[r.dayOfWeek]}`;
+  if (r.frequency === 'monthly') return `Am ${r.dayOfMonth}.`;
+  return FREQ_LABELS[r.frequency] || r.frequency;
 }
 
-/* ─── Day Detail Panel ────────────────────────────────────────────────────────── */
-function DayDetail({ ds, todos, reminders, onClose }) {
-  const isToday = ds === TODAY;
-  const isPast  = ds < TODAY;
-  const dayTodos = todos.filter(t => t.date === ds);
-  const dayRems  = reminders.filter(r => r.from <= ds && r.to >= ds);
+export default function RecurringTasks({
+  recurring, setRecurring,
+  completedToday, setCompletedToday,
+  completedThisWeek, setCompletedThisWeek,
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId]     = useState(null);
+  const [fTitle, setFTitle]     = useState('');
+  const [fFreq, setFFreq]       = useState('daily');
+  const [fDow, setFDow]         = useState(1);
+  const [fDom, setFDom]         = useState(1);
+  const [fCat, setFCat]         = useState('VN');
+  const [fNote, setFNote]       = useState('');
 
-  return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: '12px', overflow: 'hidden', marginBottom: '12px',
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 16px', borderBottom: '1px solid var(--border)',
-        background: isToday ? 'var(--indigo-bg)' : 'var(--bg)',
-      }}>
-        <div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: isToday ? 'var(--indigo)' : 'var(--text)' }}>
-            {fmtDate(ds)}
+  const openAdd = () => {
+    setEditId(null); setFTitle(''); setFFreq('daily'); setFDow(1); setFDom(1); setFCat('VN'); setFNote('');
+    setShowForm(true);
+  };
+
+  const openEdit = (r) => {
+    setEditId(r.id); setFTitle(r.title); setFFreq(r.frequency); setFDow(r.dayOfWeek ?? 1);
+    setFDom(r.dayOfMonth ?? 1); setFCat(r.category ?? 'Allgemein'); setFNote(r.note ?? '');
+    setShowForm(true);
+  };
+
+  const handleSave = () => {
+    if (!fTitle.trim()) return;
+    const entry = {
+      id: editId ?? Date.now(),
+      title: fTitle.trim(),
+      frequency: fFreq,
+      dayOfWeek: fDow,
+      dayOfMonth: fDom,
+      category: fCat,
+      note: fNote.trim(),
+      active: true,
+    };
+    if (editId) {
+      setRecurring(recurring.map(r => r.id === editId ? { ...r, ...entry } : r));
+    } else {
+      setRecurring([...recurring, entry]);
+    }
+    setShowForm(false);
+  };
+
+  const toggleActive  = (id) => setRecurring(recurring.map(r => r.id === id ? { ...r, active: !r.active } : r));
+  const deleteRec     = (id) => { if (!confirm('Wiederkehrende Aufgabe löschen?')) return; setRecurring(recurring.filter(r => r.id !== id)); };
+
+  // Toggle completion — weekonce uses completedThisWeek, others use completedToday
+  const toggleDone = (r) => {
+    if (r.frequency === 'weekonce') {
+      setCompletedThisWeek(prev => prev.includes(r.id) ? prev.filter(i => i !== r.id) : [...prev, r.id]);
+    } else {
+      setCompletedToday(prev => prev.includes(r.id) ? prev.filter(i => i !== r.id) : [...prev, r.id]);
+    }
+  };
+
+  const isDone = (r) => {
+    if (r.frequency === 'weekonce') return completedThisWeek.includes(r.id);
+    return completedToday.includes(r.id);
+  };
+
+  const dueToday = recurring.filter(isDueToday);
+  const notToday = recurring.filter(r => r.active && !isDueToday(r));
+  const inactive = recurring.filter(r => !r.active);
+
+  const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--bg)', color: 'var(--text)', fontSize: '13px', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' };
+
+  const RecRow = ({ r }) => {
+    const done = isDone(r);
+    const isWeekOnce = r.frequency === 'weekonce';
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderBottom: '1px solid var(--border)', opacity: !r.active ? 0.4 : 1 }}>
+        <button onClick={() => toggleDone(r)}
+          style={{ width: '18px', height: '18px', minWidth: '18px', borderRadius: '50%', border: `1.5px solid ${done ? 'var(--text)' : 'var(--border-strong)'}`, background: done ? 'var(--text)' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 3.5L3.8 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '14px', color: 'var(--text)', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.5 : 1 }}>{r.title}</div>
+          <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 500, padding: '1px 7px', borderRadius: '4px', background: isWeekOnce ? 'var(--amber-bg)' : 'var(--indigo-bg)', color: isWeekOnce ? 'var(--amber)' : 'var(--indigo)' }}>
+              {FREQ_LABELS[r.frequency] || r.frequency}
+            </span>
+            {r.frequency === 'weekly' && <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{WEEKDAY_NAMES[r.dayOfWeek]}</span>}
+            {r.frequency === 'monthly' && <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>am {r.dayOfMonth}.</span>}
+            {r.frequency === 'weekonce' && (
+              <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
+                {done ? '✓ Diese Woche erledigt' : 'Jeden Tag bis erledigt'}
+              </span>
+            )}
+            {(() => { const s = catStyle(r.category); return <span style={{ fontSize: '11px', fontWeight: 500, padding: '1px 7px', borderRadius: '4px', background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderLeft: '1px solid var(--border)', paddingLeft: '6px' }}>{r.category}</span>; })()}
           </div>
-          {isToday && <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--indigo)', textTransform: 'uppercase', letterSpacing: '.07em', marginTop: '2px' }}>Heute</div>}
-          {isPast && !isToday && <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>Vergangenheit</div>}
         </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: 'var(--text-3)', lineHeight: 1, padding: '0 4px', minHeight: '36px', minWidth: '36px' }}>×</button>
+        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+          <button onClick={() => toggleActive(r.id)} title={r.active ? 'Pausieren' : 'Aktivieren'}
+            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--text-3)' }}>
+            {r.active ? '⏸' : '▶'}
+          </button>
+          <button onClick={() => openEdit(r)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '13px' }}>✎</button>
+          <button onClick={() => deleteRec(r.id)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '13px', color: 'var(--text-3)' }}
+            onMouseOver={e => { e.target.style.color = 'var(--red)'; e.target.style.borderColor = '#FECACA'; }}
+            onMouseOut={e => { e.target.style.color = 'var(--text-3)'; e.target.style.borderColor = 'var(--border)'; }}>✕</button>
+        </div>
       </div>
-
-      <div style={{ padding: '12px 16px' }}>
-        {dayTodos.length === 0 && dayRems.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-3)', fontSize: '12px' }}>
-            Keine Einträge für diesen Tag
-          </div>
-        )}
-
-        {dayRems.length > 0 && (
-          <div style={{ marginBottom: dayTodos.length > 0 ? '12px' : 0 }}>
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '6px' }}>
-              Termine / Erinnerungen
-            </div>
-            {dayRems.map((r, i) => {
-              const col = EV_COLORS[i % EV_COLORS.length];
-              return (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '7px 10px', borderRadius: '7px', background: col + '15', borderLeft: `3px solid ${col}`, marginBottom: '5px' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{r.text}</div>
-                    {r.from !== r.to && <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '1px' }}>{r.from} – {r.to}</div>}
-                    {r.note && <div style={{ fontSize: '10px', color: col, marginTop: '2px' }}>{r.note}</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {dayTodos.length > 0 && (
-          <div>
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '6px' }}>
-              Aufgaben ({dayTodos.length})
-            </div>
-            {dayTodos.map(t => {
-              const overdue = !t.done && t.date < TODAY;
-              const dot = t.done ? '#16A34A' : overdue ? '#DC2626' : '#D97706';
-              return (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: dot, flexShrink: 0, marginTop: '4px' }} />
-                  <span style={{ fontSize: '12px', color: overdue ? 'var(--red)' : 'var(--text)', textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.5 : 1, lineHeight: 1.5 }}>
-                    {t.text}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Upcoming Sidebar ─────────────────────────────────────────────────────────── */
-function UpcomingPanel({ todos, reminders }) {
-  const upcoming = todos
-    .filter(t => !t.done && t.date && t.date >= TODAY)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 8);
-  const upRems = reminders
-    .filter(r => r.to >= TODAY)
-    .sort((a, b) => a.from.localeCompare(b.from))
-    .slice(0, 6);
-
-  const all = [
-    ...upRems.map(r => ({ type: 'rem', key: 'r' + r.id, label: r.text, date: r.from, isToday: r.from <= TODAY && r.to >= TODAY })),
-    ...upcoming.map(t => ({ type: 'task', key: 't' + t.id, label: t.text, date: t.date, isToday: t.date === TODAY })),
-  ].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 12);
+    );
+  };
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg)', fontSize: '9px', fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-        📋 Anstehend
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div>
+          <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: '22px', fontWeight: 400 }}>Wiederkehrende Aufgaben</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '4px' }}>Routinen die sich täglich, wöchentlich oder monatlich wiederholen</div>
+        </div>
+        <button onClick={openAdd} style={{ padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+          + Neue Routine
+        </button>
       </div>
-      {all.length === 0 && (
-        <div style={{ padding: '16px 14px', fontSize: '12px', color: 'var(--text-3)' }}>Keine anstehenden Einträge</div>
+
+      {dueToday.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <div className="section-label" style={{ marginTop: 0 }}>Heute fällig — {dueToday.length}</div>
+          {dueToday.map(r => <RecRow key={r.id} r={r} />)}
+        </div>
       )}
-      {all.map(item => {
-        const dot = item.type === 'rem' ? '#6366F1' : item.isToday ? '#6366F1' : '#D97706';
-        return (
-          <div key={item.key} style={{ display: 'flex', gap: '10px', padding: '9px 14px', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
-            <div style={{ width: '7px', height: '7px', borderRadius: item.type === 'rem' ? '2px' : '50%', background: dot, flexShrink: 0, marginTop: '4px' }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '12px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4 }}>{item.label}</div>
-              <div style={{ fontSize: '10px', color: item.isToday ? dot : 'var(--text-3)', marginTop: '1px', fontWeight: item.isToday ? 600 : 400 }}>
-                {item.isToday ? 'Heute' : fmtDate(item.date)}
+
+      {notToday.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <div className="section-label" style={{ marginTop: 0 }}>Andere Tage</div>
+          {notToday.map(r => <RecRow key={r.id} r={r} />)}
+        </div>
+      )}
+
+      {inactive.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <div className="section-label" style={{ marginTop: 0 }}>Pausiert</div>
+          {inactive.map(r => <RecRow key={r.id} r={r} />)}
+        </div>
+      )}
+
+      {recurring.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-3)', fontSize: '13px', lineHeight: 1.7 }}>
+          Noch keine Routinen.<br />Klicken Sie auf „+ Neue Routine".
+        </div>
+      )}
+
+      {showForm && (
+        <div className="modal-backdrop open" onClick={e => e.target === e.currentTarget && setShowForm(false)}>
+          <div className="modal" style={{ maxWidth: '480px' }}>
+            <div className="modal-title">{editId ? 'Routine bearbeiten' : 'Neue Routine'}</div>
+            <div className="modal-field">
+              <div className="modal-label">Titel *</div>
+              <input style={inputStyle} type="text" placeholder="z.B. E-Mails checken, Sport, Standup…" value={fTitle} onChange={e => setFTitle(e.target.value)} />
+            </div>
+            <div className="modal-grid">
+              <div className="modal-field" style={{ marginBottom: 0 }}>
+                <div className="modal-label">Kategorie</div>
+                <select className="modal-inp" style={{ cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }} value={fCat} onChange={e => setFCat(e.target.value)}>
+                  <option value="VN">VN</option>
+                  <option value="NEUE">NEUE</option>
+                  <option value="VOL.AT+">VOL.AT+</option>
+                  <option value="Ländlepunkte">Ländlepunkte</option>
+                  <option value="VOL.AT">VOL.AT</option>
+                </select>
+              </div>
+              <div className="modal-field" style={{ marginBottom: 0 }}>
+                <div className="modal-label">Häufigkeit</div>
+                <select className="modal-inp" style={{ cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }} value={fFreq} onChange={e => setFFreq(e.target.value)}>
+                  <option value="daily">Täglich</option>
+                  <option value="weekdays">Werktags (Mo–Fr)</option>
+                  <option value="weekonce">Einmal pro Woche (tägl. bis erledigt)</option>
+                  <option value="weekly">Wöchentlich (fixer Tag)</option>
+                  <option value="monthly">Monatlich</option>
+                </select>
               </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
-/* ─── Main Calendar ────────────────────────────────────────────────────────────── */
-export default function MonthView({ todos, reminders }) {
-  const now = new Date();
-  const [year, setYear]     = useState(now.getFullYear());
-  const [month, setMonth]   = useState(now.getMonth());
-  const [selectedDs, setSelDs] = useState(null);
-
-  const days     = getDays(year, month);
-  const firstDow = getFirstDow(year, month);
-
-  const prevMonth = () => { if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1); };
-  const nextMonth = () => { if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1); };
-  const goToday   = () => { setYear(now.getFullYear()); setMonth(now.getMonth()); };
-
-  const todosForDay = ds => todos.filter(t => t.date === ds);
-  const remsForDay  = ds => reminders.filter(r => r.from <= ds && r.to >= ds);
-
-  const cells = [];
-  for (let i = 0; i < firstDow; i++) cells.push(null);
-  for (let d = 1; d <= days; d++) cells.push(d);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: '28px', fontWeight: 400 }}>
-            {MONTH_NAMES[month]} <span style={{ color: 'var(--text-3)', fontWeight: 300 }}>{year}</span>
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
-            KW {getKW(new Date(year, month, 1))} – KW {getKW(new Date(year, month, days))}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <button onClick={prevMonth} className="cal-nav-btn">←</button>
-          <button onClick={goToday} className="cal-today-btn" style={{ margin: 0, display: 'inline-block' }}>Heute</button>
-          <button onClick={nextMonth} className="cal-nav-btn">→</button>
-        </div>
-      </div>
-
-      {/* Main layout: Calendar left, Sidebar right */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: '20px', alignItems: 'start' }}>
-
-        {/* ── Calendar grid (left) ── */}
-        <div style={{ minWidth: 0, overflow: 'hidden' }}>
-
-          {/* Day name headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '3px', marginBottom: '3px' }}>
-            {DAY_NAMES.map((d, i) => (
-              <div key={d} style={{
-                textAlign: 'center', fontSize: '10px', fontWeight: 700,
-                letterSpacing: '.07em', textTransform: 'uppercase',
-                color: i >= 5 ? 'var(--indigo)' : 'var(--text-3)', padding: '6px 0',
-              }}>{d}</div>
-            ))}
-          </div>
-
-          {/* Day cells */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '3px' }}>
-            {cells.map((day, i) => {
-              if (!day) return <div key={`e-${i}`} style={{ minHeight: '74px' }} />;
-
-              const ds         = localDs(year, month, day);
-              const isToday    = ds === TODAY;
-              const isSel      = ds === selectedDs;
-              const isPast     = ds < TODAY;
-              const isWeekend  = (i % 7) >= 5;
-
-              const dayTodos   = todosForDay(ds);
-              const dayRems    = remsForDay(ds);
-              const openTodos  = dayTodos.filter(t => !t.done);
-              const overdueC   = openTodos.filter(t => isPast).length;
-
-              // max 2 event chips to fit in the cell
-              const chips = [
-                ...dayRems.map((r, ri) => ({ label: r.text, color: EV_COLORS[ri % EV_COLORS.length] })),
-                ...openTodos.map(t => ({ label: t.text, color: isPast ? '#EF4444' : '#D97706' })),
-              ].slice(0, 2);
-              const extra = (dayRems.length + openTodos.length) - chips.length;
-
-              let bg = 'var(--surface)';
-              let bord = '1px solid var(--border)';
-              if (isToday) { bg = 'var(--indigo-bg)'; bord = '2px solid var(--indigo)'; }
-              if (isSel)   { bg = '#EEF2FF';           bord = '2px solid #6366F1'; }
-              if (isWeekend && !isToday && !isSel) bg = 'var(--bg)';
-
-              return (
-                <div
-                  key={ds}
-                  onClick={() => setSelDs(p => p === ds ? null : ds)}
-                  style={{
-                    minHeight: '74px', padding: '5px 6px', cursor: 'pointer',
-                    borderRadius: '7px', border: bord, background: bg,
-                    boxSizing: 'border-box', overflow: 'hidden',
-                    display: 'flex', flexDirection: 'column',
-                    transition: 'box-shadow .12s',
-                  }}
-                  onMouseOver={e => { if (!isSel) e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,.08)'; }}
-                  onMouseOut={e => e.currentTarget.style.boxShadow = 'none'}
-                >
-                  {/* Day number row */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <div style={{
-                      width: '20px', height: '20px', borderRadius: '50%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '11px', fontWeight: isToday ? 700 : 400, flexShrink: 0,
-                      background: isToday ? 'var(--indigo)' : 'transparent',
-                      color: isToday ? '#fff' : isWeekend ? '#6366F1' : isPast ? 'var(--text-3)' : 'var(--text)',
-                    }}>{day}</div>
-                    {overdueC > 0 && (
-                      <span style={{ fontSize: '8px', fontWeight: 700, color: 'var(--red)', background: '#FEF2F2', borderRadius: '3px', padding: '1px 3px', lineHeight: 1.4 }}>
-                        {overdueC}!
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Event chips */}
-                  <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                    {chips.map((chip, ci) => (
-                      <div key={ci} style={{
-                        fontSize: '9px', fontWeight: 500, lineHeight: '13px',
-                        padding: '0 4px', borderRadius: '3px',
-                        background: chip.color + (isPast ? '25' : '20'),
-                        color: isPast ? chip.color + 'aa' : chip.color,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{chip.label}</div>
-                    ))}
-                    {extra > 0 && (
-                      <div style={{ fontSize: '8px', color: 'var(--text-3)', paddingLeft: '2px' }}>+{extra} mehr</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Legend */}
-          <div style={{ display: 'flex', gap: '14px', marginTop: '12px', flexWrap: 'wrap' }}>
-            {[
-              { label: 'Heute', color: 'var(--indigo)' },
-              { label: 'Termin', color: '#6366F1', sq: true },
-              { label: 'Aufgabe', color: '#D97706' },
-              { label: 'Überfällig', color: '#EF4444' },
-            ].map(l => (
-              <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <div style={{ width: '8px', height: '8px', borderRadius: l.sq ? '2px' : '50%', background: l.color, flexShrink: 0 }} />
-                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{l.label}</span>
+            {/* Hint for weekonce */}
+            {fFreq === 'weekonce' && (
+              <div style={{ marginTop: '10px', padding: '10px 14px', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: '8px', fontSize: '12px', color: '#92400E', lineHeight: 1.6 }}>
+                💡 Diese Routine erscheint <strong>jeden Tag</strong> in der Tagesansicht, bis sie für die aktuelle Woche als erledigt markiert wird. Montags wird sie automatisch zurückgesetzt.
               </div>
-            ))}
+            )}
+
+            {fFreq === 'weekly' && (
+              <div className="modal-field" style={{ marginTop: '10px' }}>
+                <div className="modal-label">Wochentag</div>
+                <select className="modal-inp" style={{ cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none' }} value={fDow} onChange={e => setFDow(Number(e.target.value))}>
+                  {WEEKDAY_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
+                </select>
+              </div>
+            )}
+            {fFreq === 'monthly' && (
+              <div className="modal-field" style={{ marginTop: '10px' }}>
+                <div className="modal-label">Tag im Monat</div>
+                <input className="modal-inp" type="number" min="1" max="31" value={fDom} onChange={e => setFDom(Number(e.target.value))} />
+              </div>
+            )}
+            <div className="modal-field" style={{ marginTop: fFreq === 'weekonce' ? '10px' : '0' }}>
+              <div className="modal-label">Notizen</div>
+              <textarea className="modal-inp" rows="2" style={{ resize: 'none', lineHeight: '1.55' }} value={fNote} onChange={e => setFNote(e.target.value)} />
+            </div>
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setShowForm(false)}>Abbrechen</button>
+              <button className="btn-save" onClick={handleSave}>Speichern</button>
+            </div>
           </div>
         </div>
-
-        {/* ── Right Sidebar ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
-          {selectedDs && (
-            <DayDetail
-              ds={selectedDs}
-              todos={todos}
-              reminders={reminders}
-              onClose={() => setSelDs(null)}
-            />
-          )}
-          <UpcomingPanel todos={todos} reminders={reminders} />
-        </div>
-
-      </div>
+      )}
     </div>
   );
 }
