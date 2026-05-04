@@ -1,4 +1,4 @@
-const CACHE_NAME = 'self-manager-v1';
+const CACHE_NAME = 'self-manager-v2';
 const ASSETS = [
   '/self-planer/',
   '/self-planer/index.html',
