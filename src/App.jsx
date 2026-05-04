@@ -3,15 +3,10 @@ import { TODAY, CATEGORIES } from './utils';
 import TodoList from './components/TodoList';
 import CalendarReminders from './components/CalendarReminders';
 import QuickNotes from './components/QuickNotes';
-import GeneralNotes from './components/GeneralNotes';
 import AIAssistant from './components/AIAssistant';
 import LoginPage from './components/LoginPage';
-import PasswordVault from './components/PasswordVault';
 import DailyView from './components/DailyView';
 import RecurringTasks from './components/RecurringTasks';
-import MonthView from './components/MonthView';
-import WeeklyReview from './components/WeeklyReview';
-import Meetings from './components/Meetings';
 import Projects from './components/Projects';
 import { fbLoad, fbSave, onAuthStateChanged, signOut, routinesLoad, routinesSave } from './firebase';
 
@@ -22,10 +17,8 @@ export default function App() {
 
   const [todos, setTodos] = useState([]);
   const [reminders, setReminders] = useState([]);
-  const [notes, setNotes] = useState([]);
   const [quickNotes, setQuickNotes] = useState([]);
   const [recurring, setRecurring] = useState([]);
-  const [meetings, setMeetings] = useState([]);
   const [projects, setProjects] = useState([]);
   const [completedToday, setCompletedToday] = useState([]);
   const [completedThisWeek, setCompletedThisWeek] = useState([]);
@@ -33,7 +26,6 @@ export default function App() {
 
   const [editingTodoId, setEditingTodoId] = useState(null);
   const [editingRemId, setEditingRemId] = useState(null);
-  const [editingNoteId, setEditingNoteId] = useState(null);
 
   const [todoText, setTodoText] = useState('');
   const [todoPrio, setTodoPrio] = useState('mid');
@@ -52,9 +44,6 @@ export default function App() {
   const [eRemTo, setERemTo] = useState('');
   const [eRemNote, setERemNote] = useState('');
 
-  const [eNoteTitle, setENoteTitle] = useState('');
-  const [eNoteBody, setENoteBody] = useState('');
-
   const [savedDot, setSavedDot] = useState(false);
   const [syncBadge, setSyncBadge] = useState(false);
 
@@ -63,7 +52,7 @@ export default function App() {
       setUser(u);
       setAuthLoading(false);
       if (!u) {
-        setTodos([]); setReminders([]); setNotes([]); setQuickNotes([]); setLoaded(false);
+        setTodos([]); setReminders([]); setQuickNotes([]); setLoaded(false);
       }
     });
     return () => unsub();
@@ -73,22 +62,18 @@ export default function App() {
     if (!user) return;
     const loadData = async () => {
       const uid = user.uid;
-      const [t, r, n, q, rec, mtg, prj, cRout] = await Promise.all([
+      const [t, r, q, rec, prj, cRout] = await Promise.all([
         fbLoad(uid, 'todos'),
         fbLoad(uid, 'reminders'),
-        fbLoad(uid, 'notes'),
         fbLoad(uid, 'quicknotes'),
         fbLoad(uid, 'recurring'),
-        fbLoad(uid, 'meetings'),
         fbLoad(uid, 'projects'),
         routinesLoad(uid)
       ]);
       setTodos(t ?? []);
       setReminders(r ?? []);
-      setNotes(n ?? []);
       setQuickNotes(q ?? []);
       setRecurring(rec ?? []);
-      setMeetings(mtg ?? []);
       setProjects(prj ?? []);
 
       const getWeekKey = () => {
@@ -130,10 +115,8 @@ export default function App() {
 
   useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'todos', todos); flashSaved(); }, [todos, loaded]);
   useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'reminders', reminders); flashSaved(); }, [reminders, loaded]);
-  useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'notes', notes); flashSaved(); }, [notes, loaded]);
   useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'quicknotes', quickNotes); flashSaved(); }, [quickNotes, loaded]);
   useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'recurring', recurring); }, [recurring, loaded]);
-  useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'meetings', meetings); flashSaved(); }, [meetings, loaded]);
   useEffect(() => { if (!loaded || !user) return; fbSave(user.uid, 'projects', projects); flashSaved(); }, [projects, loaded]);
 
   useEffect(() => {
@@ -187,27 +170,6 @@ export default function App() {
     setEditingRemId(null);
   };
 
-  const openNoteEdit = (id) => {
-    setEditingNoteId(id || 'new');
-    if (id) {
-      const n = notes.find(x => x.id === id);
-      setENoteTitle(n.title); setENoteBody(n.body || '');
-    } else {
-      setENoteTitle(''); setENoteBody('');
-    }
-  };
-
-  const saveNoteEdit = () => {
-    const title = eNoteTitle.trim();
-    if (!title) return;
-    if (editingNoteId === 'new') {
-      setNotes([{ id: Date.now(), title, body: eNoteBody.trim(), created: TODAY, updated: TODAY }, ...notes]);
-    } else {
-      setNotes(notes.map(n => n.id === editingNoteId ? { ...n, title, body: eNoteBody.trim(), updated: TODAY } : n));
-    }
-    setEditingNoteId(null);
-  };
-
   const handleTransferProjectTask = (taskText, projectName, type = 'todo') => {
     const text = `[${projectName || 'Projekt'}] ${taskText}`;
     setActiveTab('tasks');
@@ -224,9 +186,6 @@ export default function App() {
   };
   const handleQuickToReminder = (text) => {
     window.dispatchEvent(new CustomEvent('set-reminder-text', { detail: text }));
-  };
-  const handleQuickToNote = (text) => {
-    setEditingNoteId('new'); setENoteTitle(''); setENoteBody(text);
   };
 
   const dayStr = new Date().toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -250,15 +209,11 @@ export default function App() {
         <div>
           <div className="topbar-kicker">{dayStr}</div>
           <div className="topbar-title">{{
+            home: 'Zuhause',
             today: 'Heute',
             tasks: 'Aufgaben',
             recurring: 'Routinen',
-            meetings: 'Meetings',
             projects: 'Projekte',
-            calendar: 'Kalender',
-            review: 'Review',
-            notes: 'Allgemeines',
-            vault: 'Passwörter',
           }[activeTab] || 'Aufgaben'}</div>
         </div>
         <div className="topbar-right">
@@ -281,15 +236,11 @@ export default function App() {
 
       <div style={{ display: 'flex', gap: '0', padding: '8px 0 0', borderBottom: '1px solid var(--border)', marginBottom: '-1px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {[
+          { id: 'home',      label: '🏠 Zuhause' },
           { id: 'today',     label: '☀ Heute' },
           { id: 'tasks',     label: '✓ Aufgaben' },
           { id: 'recurring', label: '🔄 Routinen' },
-          { id: 'meetings',  label: '🗓 Meetings' },
           { id: 'projects',  label: '🗂 Projekte' },
-          { id: 'calendar',  label: '📅 Kalender' },
-          { id: 'review',    label: '📊 Review' },
-          { id: 'notes',     label: '📝 Allgemeines' },
-          { id: 'vault',     label: '🔐 Passwörter' },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             style={{ padding: '8px 16px', border: 'none', borderBottom: activeTab === tab.id ? '2px solid var(--text)' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: activeTab === tab.id ? 500 : 400, color: activeTab === tab.id ? 'var(--text)' : 'var(--text-3)', fontFamily: "'Inter', sans-serif", transition: 'all .15s', marginBottom: '-1px', whiteSpace: 'nowrap' }}>
@@ -298,26 +249,19 @@ export default function App() {
         ))}
       </div>
 
-      {activeTab === 'vault'     && <div style={{ marginTop: '28px' }}><PasswordVault userId={user.uid} /></div>}
-      {activeTab === 'today'     && <div style={{ marginTop: '24px' }}><DailyView todos={todos} setTodos={setTodos} reminders={reminders} recurring={recurring} completedToday={completedToday} setCompletedToday={setCompletedToday} completedThisWeek={completedThisWeek} setCompletedThisWeek={setCompletedThisWeek} /></div>}
-      {activeTab === 'recurring' && <div style={{ marginTop: '24px' }}><RecurringTasks recurring={recurring} setRecurring={setRecurring} completedToday={completedToday} setCompletedToday={setCompletedToday} completedThisWeek={completedThisWeek} setCompletedThisWeek={setCompletedThisWeek} /></div>}
-      {activeTab === 'calendar'  && <div style={{ marginTop: '24px' }}><MonthView todos={todos} reminders={reminders} recurring={recurring} /></div>}
-      {activeTab === 'review'    && <div style={{ marginTop: '24px' }}><WeeklyReview userId={user.uid} todos={todos} /></div>}
-      {activeTab === 'meetings'  && <div style={{ marginTop: '24px' }}><Meetings meetings={meetings} setMeetings={setMeetings} userId={user.uid} /></div>}
-      {activeTab === 'projects'  && <div style={{ marginTop: '24px' }}><Projects projects={projects} setProjects={setProjects} userId={user.uid} onTransferTask={handleTransferProjectTask} /></div>}
-
-      {activeTab === 'notes' && (
-        <div style={{ marginTop: '24px', maxWidth: '800px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <div>
-              <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: '26px', fontWeight: 400 }}>Allgemeines</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '4px' }}>Notizen, Ideen, Informationen</div>
-            </div>
-            <button className="add-submit" onClick={() => openNoteEdit(null)}>+ Neuer Beitrag</button>
-          </div>
-          <GeneralNotes notes={notes} setNotes={setNotes} onOpenNoteModal={openNoteEdit} />
+      {activeTab === 'home' && (
+        <div style={{ marginTop: '0', height: 'calc(100vh - 110px)', display: 'flex', flexDirection: 'column' }}>
+          <iframe
+            src="https://lucas-hub-lab.github.io/Isa-Lucas/"
+            title="Zuhause"
+            style={{ flex: 1, width: '100%', border: 'none', borderRadius: '8px' }}
+            allow="fullscreen"
+          />
         </div>
       )}
+      {activeTab === 'today'     && <div style={{ marginTop: '24px' }}><DailyView todos={todos} setTodos={setTodos} reminders={reminders} recurring={recurring} completedToday={completedToday} setCompletedToday={setCompletedToday} completedThisWeek={completedThisWeek} setCompletedThisWeek={setCompletedThisWeek} /></div>}
+      {activeTab === 'recurring' && <div style={{ marginTop: '24px' }}><RecurringTasks recurring={recurring} setRecurring={setRecurring} completedToday={completedToday} setCompletedToday={setCompletedToday} completedThisWeek={completedThisWeek} setCompletedThisWeek={setCompletedThisWeek} /></div>}
+      {activeTab === 'projects'  && <div style={{ marginTop: '24px' }}><Projects projects={projects} setProjects={setProjects} userId={user.uid} onTransferTask={handleTransferProjectTask} /></div>}
 
       {activeTab === 'tasks' && (<>
         <div className="stats">
@@ -347,7 +291,7 @@ export default function App() {
           <div className="col-left"><TodoList todos={todos} setTodos={setTodos} onOpenEdit={openTodoEdit} /></div>
           <div className="col-right"><CalendarReminders reminders={reminders} setReminders={setReminders} onOpenRemEdit={openRemEdit} /></div>
           <div className="col-quick">
-            <QuickNotes quickNotes={quickNotes} setQuickNotes={setQuickNotes} onAddTodo={handleQuickToTodo} onAddReminder={handleQuickToReminder} onAddNote={handleQuickToNote} />
+            <QuickNotes quickNotes={quickNotes} setQuickNotes={setQuickNotes} onAddTodo={handleQuickToTodo} onAddReminder={handleQuickToReminder} />
           </div>
           <AIAssistant todos={todos} />
         </div>
@@ -394,17 +338,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Note Modal */}
-      {editingNoteId && (
-        <div className="modal-backdrop open" onClick={(e) => e.target === e.currentTarget && setEditingNoteId(null)}>
-          <div className="modal" style={{ maxWidth: '520px' }}>
-            <div className="modal-title">{editingNoteId === 'new' ? 'Neuer Beitrag' : 'Beitrag bearbeiten'}</div>
-            <div className="modal-field"><div className="modal-label">Titel</div><input className="modal-inp" type="text" placeholder="Titel eingeben…" value={eNoteTitle} onChange={e => setENoteTitle(e.target.value)} /></div>
-            <div className="modal-field"><div className="modal-label">Notizen</div><textarea className="modal-inp" rows="7" style={{ resize: 'vertical', lineHeight: '1.6', minHeight: '120px' }} value={eNoteBody} onChange={e => setENoteBody(e.target.value)}></textarea></div>
-            <div className="modal-actions"><button className="btn-cancel" onClick={() => setEditingNoteId(null)}>Abbrechen</button><button className="btn-save" onClick={saveNoteEdit}>Speichern</button></div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

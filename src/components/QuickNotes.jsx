@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function QuickNotes({ quickNotes, setQuickNotes, onAddTodo, onAddReminder, onAddNote }) {
+export default function QuickNotes({ quickNotes, setQuickNotes, onAddTodo, onAddReminder }) {
   const [inputText, setInputText] = useState('');
 
   const handleAdd = () => {
@@ -41,11 +41,6 @@ export default function QuickNotes({ quickNotes, setQuickNotes, onAddTodo, onAdd
     toggleDone(id);
   };
 
-  const toNote = (id, text) => {
-    onAddNote(text);
-    toggleDone(id);
-  };
-
   const openNotes = quickNotes.filter(n => !n.done);
   const doneNotes = quickNotes.filter(n => n.done);
 
@@ -69,7 +64,7 @@ export default function QuickNotes({ quickNotes, setQuickNotes, onAddTodo, onAdd
         
         <div id="quick-notes-list">
           {quickNotes.length === 0 ? (
-            <div className="quick-empty">Einfach lostippen —<br/>Notizen können danach zu Aufgaben,<br/>Erinnerungen oder Allgemeines werden.</div>
+            <div className="quick-empty">Einfach lostippen —<br/>Notizen können danach zu Aufgaben<br/>oder Erinnerungen werden.</div>
           ) : (
             <>
               {openNotes.length > 0 && <div className="quick-count">{openNotes.length} offen</div>}
@@ -81,7 +76,6 @@ export default function QuickNotes({ quickNotes, setQuickNotes, onAddTodo, onAdd
                     <div className="quick-note-actions">
                       <button className="qn-btn task" onClick={() => toTodo(n.id, n.text)}>→ Aufgabe</button>
                       <button className="qn-btn reminder" onClick={() => toReminder(n.id, n.text)}>→ Erinnerung</button>
-                      <button className="qn-btn allg" onClick={() => toNote(n.id, n.text)}>→ Allgemeines</button>
                       <button className="qn-btn del" onClick={() => handleDelete(n.id)}>✕</button>
                     </div>
                   </div>
